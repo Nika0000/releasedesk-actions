@@ -25,7 +25,7 @@ jobs:
         uses: ./
         with:
           command: revoke
-          server-url: https://example.invalid
+          instance: https://example.invalid
           token: rd_dummy
       - name: Assert rdesk was installed and ran
         shell: bash

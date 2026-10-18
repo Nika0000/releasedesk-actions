@@ -13,10 +13,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: upload
-        uses: Nika0000/releasedesk-action@v1
+        uses: Nika0000/releasedesk-actions@v1
         with:
           command: upload
-          server-url: ${{ vars.RD_URL }}
           token: ${{ secrets.RD_TOKEN }}
           file: build/app.zip
           version: ${{ github.ref_name }}
@@ -24,10 +23,9 @@ jobs:
           arch: x64
           format: zip
           notes-file: RELEASE_NOTES.md
-      - uses: Nika0000/releasedesk-action@v1
+      - uses: Nika0000/releasedesk-actions@v1
         with:
           command: promote
-          server-url: ${{ vars.RD_URL }}
           token: ${{ secrets.RD_TOKEN }}
           release-id: ${{ steps.upload.outputs.release-id }}
           channel: beta
@@ -39,7 +37,8 @@ jobs:
 | Input | Used by | Notes |
 | --- | --- | --- |
 | `command` | all | `upload`, `asset`, `promote`, `distribute`, `revoke` |
-| `server-url`, `token` | all | required; use a CI-scoped API token stored as a secret |
+| `token` | all | required; use a CI-scoped API token stored as a secret |
+| `instance` | all | ReleaseDesk URL, defaults to `https://releasedesk.dev`; set it for a self-hosted instance |
 | `org`, `app` | all | default to the token's own scope |
 | `file`, `version`, `build`, `platform`, `arch`, `format`, `notes-file` | upload | `build` defaults to the run number |
 | `release-id`, `role`, `file` | asset | |

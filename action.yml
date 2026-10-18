@@ -9,9 +9,10 @@ inputs:
   command:
     description: "upload | asset | promote | distribute | revoke"
     required: true
-  server-url:
-    description: ReleaseDesk base URL (e.g. https://releasedesk.example.com)
-    required: true
+  instance:
+    description: ReleaseDesk instance base URL. Set it for a self-hosted instance.
+    required: false
+    default: https://releasedesk.dev
   token:
     description: ReleaseDesk API token (rd_...). Store it as a secret.
     required: true
@@ -162,7 +163,7 @@ runs:
       id: run
       shell: bash
       env:
-        RD_URL: ${{ inputs.server-url }}
+        RD_URL: ${{ inputs.instance }}
         RD_TOKEN: ${{ inputs.token }}
         EXE: ${{ steps.platform.outputs.exe }}
         COMMAND: ${{ inputs.command }}
