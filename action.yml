@@ -1,0 +1,209 @@
+name: ReleaseDesk Publish
+description: Upload, promote, distribute and revoke releases on a self-hosted ReleaseDesk instance with the rdesk CLI.
+author: Nika0000
+branding:
+  icon: upload-cloud
+  color: gray-dark
+
+inputs:
+  command:
+    description: "upload | asset | promote | distribute | revoke"
+    required: true
+  server-url:
+    description: ReleaseDesk base URL (e.g. https://releasedesk.example.com)
+    required: true
+  token:
+    description: ReleaseDesk API token (rd_...). Store it as a secret.
+    required: true
+  org:
+    description: Organization id or slug (defaults to the token's own org)
+    required: false
+  app:
+    description: App id or slug (defaults to the token's own app)
+    required: false
+  file:
+    description: Build artifact path (upload, asset)
+    required: false
+  version:
+    description: Release version (upload)
+    required: false
+  build:
+    description: Build number (upload)
+    required: false
+    default: ${{ github.run_number }}
+  platform:
+    description: android | ios | macos | windows | linux (upload)
+    required: false
+  arch:
+    description: Artifact architecture (upload)
+    required: false
+  format:
+    description: Artifact format, e.g. apk, ipa, zip, exe (upload)
+    required: false
+  notes-file:
+    description: Markdown file used as release notes (upload)
+    required: false
+  release-id:
+    description: Release id (asset, promote, distribute, revoke)
+    required: false
+  channel:
+    description: Channel name or id (promote)
+    required: false
+  percent:
+    description: Rollout percentage 1-100 (promote)
+    required: false
+    default: "100"
+  groups:
+    description: Newline- or comma-separated tester group names/ids (distribute)
+    required: false
+  role:
+    description: Asset role (asset)
+    required: false
+  rdesk-feed:
+    description: Signed generic update feed the rdesk CLI is downloaded from (always the latest stable build).
+    required: false
+    default: https://releasedesk.dev/feeds/v1/rdesk-cli/stable
+
+outputs:
+  release-id:
+    description: Release id (upload)
+    value: ${{ steps.run.outputs.release-id }}
+  version:
+    description: Release version (upload)
+    value: ${{ steps.run.outputs.version }}
+  artifact-sha256:
+    description: SHA-256 of the uploaded artifact (upload)
+    value: ${{ steps.run.outputs.artifact-sha256 }}
+  json:
+    description: Raw JSON result printed by rdesk
+    value: ${{ steps.run.outputs.json }}
+
+runs:
+  using: composite
+  steps:
+    - name: Mask token
+      shell: bash
+      env:
+        RD_TOKEN: ${{ inputs.token }}
+      run: echo "::add-mask::$RD_TOKEN"
+
+    - name: Resolve platform
+      id: platform
+      shell: bash
+      run: |
+        case "$RUNNER_OS" in
+          Linux) os=linux ;;
+          macOS) os=darwin ;;
+          Windows) os=windows ;;
+          *) echo "Unsupported runner OS: $RUNNER_OS" >&2; exit 1 ;;
+        esac
+        case "$RUNNER_ARCH" in
+          X64) arch=x64 ;;
+          ARM64) arch=arm64 ;;
+          *) echo "Unsupported runner arch: $RUNNER_ARCH" >&2; exit 1 ;;
+        esac
+        target="$os-$arch"
+        [ "$os" = windows ] && [ "$arch" != x64 ] && { echo "No rdesk build for $target" >&2; exit 1; }
+        echo "target=$target" >> "$GITHUB_OUTPUT"
+        echo "feed-platform=$([ "$os" = darwin ] && echo macos || echo "$os")" >> "$GITHUB_OUTPUT"
+        echo "arch=$arch" >> "$GITHUB_OUTPUT"
+        echo "exe=rdesk-$target$([ "$os" = windows ] && echo .exe)" >> "$GITHUB_OUTPUT"
+
+    - name: Resolve rdesk build
+      id: version
+      shell: bash
+      env:
+        FEED: ${{ inputs.rdesk-feed }}
+        PLATFORM: ${{ steps.platform.outputs.feed-platform }}
+        ARCH: ${{ steps.platform.outputs.arch }}
+      run: |
+        set -euo pipefail
+        envelope=$(curl -fsSL --retry 3 "${FEED%/}/$PLATFORM/$ARCH/latest.json")
+        payload=$(echo "$envelope" | jq -r '.payload | gsub("-";"+") | gsub("_";"/") | @base64d')
+        {
+          echo "tag=$(echo "$payload" | jq -r .version)"
+          echo "url=$(echo "$payload" | jq -r .url)"
+          echo "sha256=$(echo "$payload" | jq -r .sha256)"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Cache rdesk
+      id: cache
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: ${{ runner.temp }}/rdesk-bin
+        key: rdesk-${{ steps.version.outputs.sha256 }}
+
+    - name: Download and verify rdesk
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        FEED: ${{ inputs.rdesk-feed }}
+        URL: ${{ steps.version.outputs.url }}
+        SHA256: ${{ steps.version.outputs.sha256 }}
+        EXE: ${{ steps.platform.outputs.exe }}
+      run: |
+        set -euo pipefail
+        dir="$RUNNER_TEMP/rdesk-bin"
+        dl="$RUNNER_TEMP/rdesk-dl"
+        mkdir -p "$dir" "$dl"
+        case "$URL" in http*) ;; *) URL="$(echo "$FEED" | cut -d/ -f1-3)$URL" ;; esac
+        curl -fsSL --retry 3 -o "$dl/artifact" "$URL"
+        actual=$( (sha256sum "$dl/artifact" 2>/dev/null || shasum -a 256 "$dl/artifact") | cut -d' ' -f1)
+        [ "$actual" = "$SHA256" ] || { echo "Checksum mismatch for rdesk download" >&2; exit 1; }
+        case "$EXE" in
+          *.exe) mv "$dl/artifact" "$dir/$EXE" ;;
+          *) unzip -q -o "$dl/artifact" -d "$dir" ;;
+        esac
+        chmod +x "$dir/$EXE"
+
+    - name: Run rdesk
+      id: run
+      shell: bash
+      env:
+        RD_URL: ${{ inputs.server-url }}
+        RD_TOKEN: ${{ inputs.token }}
+        EXE: ${{ steps.platform.outputs.exe }}
+        COMMAND: ${{ inputs.command }}
+        IN_ORG: ${{ inputs.org }}
+        IN_APP: ${{ inputs.app }}
+        IN_FILE: ${{ inputs.file }}
+        IN_VERSION: ${{ inputs.version }}
+        IN_BUILD: ${{ inputs.build }}
+        IN_PLATFORM: ${{ inputs.platform }}
+        IN_ARCH: ${{ inputs.arch }}
+        IN_FORMAT: ${{ inputs.format }}
+        IN_NOTES_FILE: ${{ inputs.notes-file }}
+        IN_RELEASE: ${{ inputs.release-id }}
+        IN_CHANNEL: ${{ inputs.channel }}
+        IN_PERCENT: ${{ inputs.percent }}
+        IN_GROUPS: ${{ inputs.groups }}
+        IN_ROLE: ${{ inputs.role }}
+      run: |
+        set -euo pipefail
+        args=("$COMMAND" --json)
+        add() { [ -n "$2" ] && args+=("$1" "$2") || true; }
+        add --org "$IN_ORG"; add --app "$IN_APP"
+        case "$COMMAND" in
+          upload)
+            add --file "$IN_FILE"; add --version "$IN_VERSION"; add --build "$IN_BUILD"
+            add --platform "$IN_PLATFORM"; add --arch "$IN_ARCH"; add --format "$IN_FORMAT"
+            add --notes-file "$IN_NOTES_FILE" ;;
+          asset)
+            add --release "$IN_RELEASE"; add --role "$IN_ROLE"; add --file "$IN_FILE" ;;
+          promote)
+            add --release "$IN_RELEASE"; add --channel "$IN_CHANNEL"; add --percent "$IN_PERCENT" ;;
+          distribute)
+            add --release "$IN_RELEASE"
+            while IFS= read -r g; do add --group "$(echo "$g" | xargs)"; done < <(echo "$IN_GROUPS" | tr ',' '\n') ;;
+          revoke)
+            add --release "$IN_RELEASE" ;;
+          *) echo "Unsupported command: $COMMAND" >&2; exit 1 ;;
+        esac
+        out=$("$RUNNER_TEMP/rdesk-bin/$EXE" "${args[@]}")
+        echo "$out"
+        {
+          echo "json=$out"
+          echo "release-id=$(echo "$out" | jq -r '.releaseId // empty')"
+          echo "version=$(echo "$out" | jq -r '.version // empty')"
+          echo "artifact-sha256=$(echo "$out" | jq -r '.artifactSha256 // empty')"
+        } >> "$GITHUB_OUTPUT"

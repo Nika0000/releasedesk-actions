@@ -1,0 +1,25 @@
+name: Bug report
+description: Something in the action does not work as documented
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Action version and rdesk-version
+      placeholder: "v1 / latest"
+    validations:
+      required: true
+  - type: input
+    id: runner
+    attributes:
+      label: Runner
+      placeholder: ubuntu-latest
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Workflow step and log output
+      description: Remove secrets and server URLs you do not want public.
+    validations:
+      required: true
