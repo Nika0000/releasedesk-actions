@@ -9,23 +9,27 @@ permissions:
   contents: read
 
 jobs:
-  self-test:
-    # Needs a staging ReleaseDesk instance: set the RD_URL variable and RD_TOKEN secret (read scope).
-    if: ${{ vars.RD_URL != '' }}
+  smoke:
+    # Needs no ReleaseDesk instance: revoke without --release fails inside rdesk before any network call,
+    # which proves the binary was downloaded, checksum-verified and executed.
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Revoke without a release id must fail
+      - name: Run action (expected to fail inside rdesk)
         id: negative
         continue-on-error: true
         uses: ./
         with:
           command: revoke
-          server-url: ${{ vars.RD_URL }}
-          token: ${{ secrets.RD_TOKEN }}
-      - name: Assert failure
+          server-url: https://example.invalid
+          token: rd_dummy
+      - name: Assert rdesk was installed and ran
         shell: bash
-        run: '[ "${{ steps.negative.outcome }}" = failure ]'
+        run: |
+          [ "${{ steps.negative.outcome }}" = failure ]
+          bin=$(ls "$RUNNER_TEMP"/rdesk-bin/rdesk-* | head -n1)
+          "$bin" --help | head -n 3
