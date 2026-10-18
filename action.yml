@@ -121,8 +121,8 @@ runs:
         set -euo pipefail
         # jq.exe on Windows runners emits CRLF, so strip CR from everything it prints.
         envelope=$(curl -fsSL --retry 3 "${FEED%/}/$PLATFORM/$ARCH/latest.json")
-        payload=$(echo "$envelope" | jq -r '.payload | gsub("-";"+") | gsub("_";"/") | @base64d' | tr -d '')
-        field() { echo "$payload" | jq -r ".$1" | tr -d ''; }
+        payload=$(echo "$envelope" | jq -r '.payload | gsub("-";"+") | gsub("_";"/") | @base64d' | tr -d '\r')
+        field() { echo "$payload" | jq -r ".$1" | tr -d '\r'; }
         {
           echo "tag=$(field version)"
           echo "url=$(field url)"
@@ -206,7 +206,7 @@ runs:
         echo "$out"
         {
           echo "json=$out"
-          echo "release-id=$(echo "$out" | jq -r '.releaseId // empty' | tr -d '')"
-          echo "version=$(echo "$out" | jq -r '.version // empty' | tr -d '')"
-          echo "artifact-sha256=$(echo "$out" | jq -r '.artifactSha256 // empty' | tr -d '')"
+          echo "release-id=$(echo "$out" | jq -r '.releaseId // empty' | tr -d '\r')"
+          echo "version=$(echo "$out" | jq -r '.version // empty' | tr -d '\r')"
+          echo "artifact-sha256=$(echo "$out" | jq -r '.artifactSha256 // empty' | tr -d '\r')"
         } >> "$GITHUB_OUTPUT"
