@@ -151,8 +151,8 @@ runs:
         mkdir -p "$dir" "$dl"
         case "$URL" in http*) ;; *) URL="$(echo "$FEED" | cut -d/ -f1-3)$URL" ;; esac
         curl -fsSL --retry 3 -o "$dl/artifact" "$URL"
-        actual=$( (sha256sum "$dl/artifact" 2>/dev/null || shasum -a 256 "$dl/artifact") | cut -d' ' -f1)
-        [ "$actual" = "$SHA256" ] || { echo "Checksum mismatch for rdesk download" >&2; exit 1; }
+        actual=$( (sha256sum < "$dl/artifact" 2>/dev/null || shasum -a 256 < "$dl/artifact") | cut -d" " -f1)
+        [ "$actual" = "$SHA256" ] || { echo "Checksum mismatch for rdesk download: expected $SHA256, got $actual" >&2; exit 1; }
         case "$EXE" in
           *.exe) mv "$dl/artifact" "$dir/$EXE" ;;
           *) unzip -q -o "$dl/artifact" -d "$dir" ;;
