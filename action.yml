@@ -118,12 +118,14 @@ runs:
         ARCH: ${{ steps.platform.outputs.arch }}
       run: |
         set -euo pipefail
+        # jq.exe on Windows runners emits CRLF, so strip CR from everything it prints.
         envelope=$(curl -fsSL --retry 3 "${FEED%/}/$PLATFORM/$ARCH/latest.json")
-        payload=$(echo "$envelope" | jq -r '.payload | gsub("-";"+") | gsub("_";"/") | @base64d')
+        payload=$(echo "$envelope" | jq -r '.payload | gsub("-";"+") | gsub("_";"/") | @base64d' | tr -d '')
+        field() { echo "$payload" | jq -r ".$1" | tr -d ''; }
         {
-          echo "tag=$(echo "$payload" | jq -r .version)"
-          echo "url=$(echo "$payload" | jq -r .url)"
-          echo "sha256=$(echo "$payload" | jq -r .sha256)"
+          echo "tag=$(field version)"
+          echo "url=$(field url)"
+          echo "sha256=$(field sha256)"
         } >> "$GITHUB_OUTPUT"
 
     - name: Cache rdesk
@@ -203,7 +205,7 @@ runs:
         echo "$out"
         {
           echo "json=$out"
-          echo "release-id=$(echo "$out" | jq -r '.releaseId // empty')"
-          echo "version=$(echo "$out" | jq -r '.version // empty')"
-          echo "artifact-sha256=$(echo "$out" | jq -r '.artifactSha256 // empty')"
+          echo "release-id=$(echo "$out" | jq -r '.releaseId // empty' | tr -d '')"
+          echo "version=$(echo "$out" | jq -r '.version // empty' | tr -d '')"
+          echo "artifact-sha256=$(echo "$out" | jq -r '.artifactSha256 // empty' | tr -d '')"
         } >> "$GITHUB_OUTPUT"
